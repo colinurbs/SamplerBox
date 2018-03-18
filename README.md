@@ -1,6 +1,6 @@
-SamplerBox
+SamplerBox APCKey Edition
 ==========
-
+Based on SamplerBox
 An open-source audio sampler project based on RaspberryPi.
 
 Website: www.samplerbox.org
