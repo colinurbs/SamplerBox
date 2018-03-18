@@ -1,5 +1,5 @@
 #
-#  SamplerBox
+#  SamplerBoxAPCKey25 Edition
 #
 #  author:    Joseph Ernest (twitter: @JosephErnest, mail: contact@samplerbox.org)
 #  url:       http://www.samplerbox.org/
@@ -40,6 +40,7 @@ import rtmidi_python as rtmidi
 import samplerbox_audio
 
 
+    
 #########################################
 # SLIGHT MODIFICATION OF PYTHON'S WAVE MODULE
 # TO READ CUE MARKERS & LOOP MARKERS
@@ -161,13 +162,25 @@ FADEOUT = numpy.append(FADEOUT, numpy.zeros(FADEOUTLENGTH, numpy.float32)).astyp
 SPEED = numpy.power(2, numpy.arange(0.0, 84.0)/12).astype(numpy.float32)
 
 samples = {}
+samples2 = {}
 playingnotes = {}
+arpnotes = []
 sustainplayingnotes = []
 sustain = False
 playingsounds = []
 globalvolume = 10 ** (-12.0/20)  # -12dB default global volume
 globaltranspose = 0
-
+arp = False
+arptime = .1
+arpspace = 0
+arpspace2 = 0
+arp2 = False
+arptime2 = .1
+ignore = [64, 65, 66, 67, 68, 69, 70, 71, 81, 86, 85, 84, 83, 82, 98, 91, 93]
+arpnotes = []
+arpnotes2 = []
+arpvolume = 64
+preset2 = 0
 
 #########################################
 # AUDIO AND MIDI CALLBACKS
@@ -175,7 +188,7 @@ globaltranspose = 0
 #########################################
 
 def AudioCallback(outdata, frame_count, time_info, status):
-    global playingsounds
+    global playingsounds, playingnotes
     rmlist = []
     playingsounds = playingsounds[-MAX_POLYPHONY:]
     b = samplerbox_audio.mixaudiobuffers(playingsounds, rmlist, frame_count, FADEOUT, FADEOUTLENGTH, SPEED)
@@ -186,51 +199,186 @@ def AudioCallback(outdata, frame_count, time_info, status):
             pass
     b *= globalvolume
     outdata[:] = b.reshape(outdata.shape)
+    
+    
 
 def MidiCallback(message, time_stamp):
-    global playingnotes, sustain, sustainplayingnotes
-    global preset
+    global playingnotes, sustain, sustainplayingnotes, arptime, arptime2, arpspace, arpspace2
+    global preset, ignore, preset2, samples2
+    global globalvolume, globaltranspose, arp, arp2, arpnotes, arpnotes2, arpvolume
     messagetype = message[0] >> 4
     messagechannel = (message[0] & 15) + 1
     note = message[1] if len(message) > 1 else None
     midinote = note
     velocity = message[2] if len(message) > 2 else None
+    
+    print str(note)
+    
+    if messagechannel == 1 :
+        if messagetype == 11:
+            
+            if midinote == 51:
+                print str(message[2])
+                print str(globalvolume)
+                globalvolume = message[2] * 0.01
+                
+            if midinote == 55:
+                print str(message[2])
+                print str(arpvolume)
+                arpvolume = message[2] 
+                
+            if midinote == 48:
+                print str(message[2])
+                print str(arptime)
+                
+                arptime = message[2] * 0.01
+                
+            if midinote == 52:
+                print str(message[2])
+                print str(arptime2)
+                
+                arptime2 = message[2] * 0.01
+                
+            if midinote == 49:
+                print str(message[2])
+                print str(arpspace)
+                
+                arpspace= message[2] * 0.01
+                
+            if midinote == 53:
+                print str(message[2])
+                print str(arpspace2)
+                
+                arpspace2 = message[2] * 0.01
+            
+        if midinote == 82 and messagetype == 9:
+            print 'arp 1 on'
+                
+            arp = True
+            
+           
+            
+        if midinote == 83 and messagetype == 9:
+            print 'arp 2 on'
+                
+            arp2 = True
+            
+            
+            
+        if midinote == 84 and messagetype == 9:
+            print 'arp 1 off'
+            arp = False
+            
+        if midinote == 85 and messagetype == 9:
+            print 'arp 2 off'
+            arp2 = False
+        
+        if midinote == 86 and messagetype == 9:
+            print 'arp 1 cleared'
+            arpnotes = []
+            
+        if midinote == 81 and messagetype == 9:
+            print 'arp 2 cleared'
+            arpnotes2 = []
+            
+            
+        if midinote == 64 and messagetype == 9:
+                preset = preset + 1
+                print 'Program change ' + str(preset)
+                LoadSamples()
+        if midinote == 65 and messagetype == 9:
+                preset = preset - 1
+                if preset < 0:
+                    preset = 0
+                print 'Program change ' + str(preset)
+                LoadSamples()
+        if midinote == 66 and messagetype == 9:
+                preset2 = preset2 + 1
+                print 'Program2 change ' + str(preset2)
+                LoadSamples2()
+        if midinote == 67 and messagetype == 9:
+                preset2 = preset2 - 1
+                if preset2 < 0:
+                    preset2 = 0
+                print 'Program2 change ' + str(preset2)
+                LoadSamples2()
+                
+        if messagetype == 9 and velocity == 0:
+            messagetype = 8
+        
+        if messagetype == 9:    # Note on
+            midinote += globaltranspose
+            
+            
+            if midinote not in ignore:
+                midinote += 36
+                if arp == True:
+                    if midinote != 118:  
+                        arpnotes.append(midinote)
+                    
+                    
+                if arp == False:
+                    try:
+                        
+                        playingnotes.setdefault(midinote, []).append(samples2[midinote, velocity].play(midinote))
+                    except:
+                        pass
 
-    if messagetype == 9 and velocity == 0:
-        messagetype = 8
+        elif messagetype == 8:  # Note off
+            midinote += globaltranspose
+            midinote += 36
+            if midinote in playingnotes:
+                for n in playingnotes[midinote]:
+                    if sustain:
+                        sustainplayingnotes.append(n)
+                    else:
+                        n.fadeout(50)
+                playingnotes[midinote] = []
+    
+    if(messagechannel == 2):
+        if messagetype == 9 and velocity == 0:
+            messagetype = 8
+        
+        if messagetype == 9:    # Note on
+            midinote += globaltranspose
+            
+            if arp2 == True:
+                if midinote != 118:  
+                    arpnotes2.append(midinote)
+                
+                
+            if arp2 == False:
+        
+                try:
+                    playingnotes.setdefault(midinote, []).append(samples[midinote, velocity].play(midinote))
+                except:
+                    pass
 
-    if messagetype == 9:    # Note on
-        midinote += globaltranspose
-        try:
-            playingnotes.setdefault(midinote, []).append(samples[midinote, velocity].play(midinote))
-        except:
-            pass
+        elif messagetype == 8:  # Note off
+            midinote += globaltranspose
+            if midinote in playingnotes:
+                for n in playingnotes[midinote]:
+                    if sustain:
+                        sustainplayingnotes.append(n)
+                    else:
+                        n.fadeout(50)
+                playingnotes[midinote] = []
 
-    elif messagetype == 8:  # Note off
-        midinote += globaltranspose
-        if midinote in playingnotes:
-            for n in playingnotes[midinote]:
-                if sustain:
-                    sustainplayingnotes.append(n)
-                else:
-                    n.fadeout(50)
-            playingnotes[midinote] = []
+        elif messagetype == 12:  # Program change
+            print 'Program change ' + str(note)
+            preset = note
+            LoadSamples()
 
-    elif messagetype == 12:  # Program change
-        print 'Program change ' + str(note)
-        preset = note
-        LoadSamples()
+        elif (messagetype == 11) and (note == 64) and (velocity < 64):  # sustain pedal off
+            for n in sustainplayingnotes:
+                n.fadeout(50)
+            sustainplayingnotes = []
+            sustain = False
 
-    elif (messagetype == 11) and (note == 64) and (velocity < 64):  # sustain pedal off
-        for n in sustainplayingnotes:
-            n.fadeout(50)
-        sustainplayingnotes = []
-        sustain = False
+        elif (messagetype == 11) and (note == 64) and (velocity >= 64):  # sustain pedal on
+            sustain = True
 
-    elif (messagetype == 11) and (note == 64) and (velocity >= 64):  # sustain pedal on
-        sustain = True
-
-
+    
 #########################################
 # LOAD SAMPLES
 #
@@ -342,6 +490,112 @@ def ActuallyLoad():
         display("%04d" % preset)
     else:
         print 'Preset empty: ' + str(preset)
+        display("E%03d" % preset)
+        
+
+
+def LoadSamples2():
+    global LoadingThread
+    global LoadingInterrupt
+
+    if LoadingThread:
+        LoadingInterrupt = True
+        LoadingThread.join()
+        LoadingThread = None
+
+    LoadingInterrupt = False
+    LoadingThread = threading.Thread(target=ActuallyLoad2)
+    LoadingThread.daemon = True
+    LoadingThread.start()
+
+NOTES = ["c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"]
+
+
+def ActuallyLoad2():
+    global preset2
+    global samples2
+    global playingsounds
+    global globalvolume, globaltranspose
+    playingsounds = []
+    samples2 = {}
+    globalvolume = 10 ** (-12.0/20)  # -12dB default global volume
+    globaltranspose = 0
+
+    samplesdir = SAMPLES_DIR if os.listdir(SAMPLES_DIR) else '.'      # use current folder (containing 0 Saw) if no user media containing samples has been found
+
+    basename = next((f for f in os.listdir(samplesdir) if f.startswith("%d " % preset2)), None)      # or next(glob.iglob("blah*"), None)
+    if basename:
+        dirname = os.path.join(samplesdir, basename)
+    if not basename:
+        print 'Preset2 empty: %s' % preset2
+        display("E%03d" % preset2)
+        return
+    print 'Preset2 loading: %s (%s)' % (preset2, basename)
+    display("L%03d" % preset2)
+
+    definitionfname = os.path.join(dirname, "definition.txt")
+    if os.path.isfile(definitionfname):
+        with open(definitionfname, 'r') as definitionfile:
+            for i, pattern in enumerate(definitionfile):
+                try:
+                    if r'%%volume' in pattern:        # %%paramaters are global parameters
+                        globalvolume *= 10 ** (float(pattern.split('=')[1].strip()) / 20)
+                        continue
+                    if r'%%transpose' in pattern:
+                        globaltranspose = int(pattern.split('=')[1].strip())
+                        continue
+                    defaultparams = {'midinote': '0', 'velocity': '127', 'notename': ''}
+                    if len(pattern.split(',')) > 1:
+                        defaultparams.update(dict([item.split('=') for item in pattern.split(',', 1)[1].replace(' ', '').replace('%', '').split(',')]))
+                    pattern = pattern.split(',')[0]
+                    pattern = re.escape(pattern.strip())
+                    pattern = pattern.replace(r"\%midinote", r"(?P<midinote>\d+)").replace(r"\%velocity", r"(?P<velocity>\d+)")\
+                                     .replace(r"\%notename", r"(?P<notename>[A-Ga-g]#?[0-9])").replace(r"\*", r".*?").strip()    # .*? => non greedy
+                    for fname in os.listdir(dirname):
+                        if LoadingInterrupt:
+                            return
+                        m = re.match(pattern, fname)
+                        if m:
+                            info = m.groupdict()
+                            midinote = int(info.get('midinote', defaultparams['midinote']))
+                            velocity = int(info.get('velocity', defaultparams['velocity']))
+                            notename = info.get('notename', defaultparams['notename'])
+                            if notename:
+                                midinote = NOTES.index(notename[:-1].lower()) + (int(notename[-1])+2) * 12
+                            samples2[midinote, velocity] = Sound(os.path.join(dirname, fname), midinote, velocity)
+                except:
+                    print "Error in definition file, skipping line %s." % (i+1)
+
+    else:
+        for midinote in range(0, 127):
+            if LoadingInterrupt:
+                return
+            file = os.path.join(dirname, "%d.wav" % midinote)
+            if os.path.isfile(file):
+                samples2[midinote, 127] = Sound(file, midinote, 127)
+
+    initial_keys = set(samples2.keys())
+    for midinote in xrange(128):
+        lastvelocity = None
+        for velocity in xrange(128):
+            if (midinote, velocity) not in initial_keys:
+                samples2[midinote, velocity] = lastvelocity
+            else:
+                if not lastvelocity:
+                    for v in xrange(velocity):
+                        samples2[midinote, v] = samples2[midinote, velocity]
+                lastvelocity = samples2[midinote, velocity]
+        if not lastvelocity:
+            for velocity in xrange(128):
+                try:
+                    samples2[midinote, velocity] = samples2[midinote-1, velocity]
+                except:
+                    pass
+    if len(initial_keys) > 0:
+        print 'Preset2 loaded: ' + str(preset2)
+        display("%04d" % preset)
+    else:
+        print 'Preset empty: ' + str(preset2)
         display("E%03d" % preset)
 
 
@@ -471,9 +725,55 @@ LoadSamples()
 # MAIN LOOP
 #########################################
 
+midi_out = rtmidi.MidiOut()
+midi_out.open_port(0)
+
+midi_out.send_message([0x90, 04, 64]) # Note on
+time.sleep(arptime)
+midi_out.send_message([0x80, 1, 100]) # Note off
+
+del midi_out
+
 midi_in = [rtmidi.MidiIn()]
+
 previous = []
 while True:
+    if arpnotes:
+        
+        for midinote in arpnotes:
+            
+            try:
+                time.sleep(arpspace)
+                playingnotes[midinote] = []
+                playingnotes.setdefault(midinote, []).append(samples2[midinote, arpvolume].play(midinote))
+                time.sleep(arptime)
+                if midinote in playingnotes:
+                    for n in playingnotes[midinote]:
+                        if sustain:
+                            sustainplayingnotes.append(n)
+                        else:
+                            n.fadeout(50)
+            except:
+                pass
+            
+    if arpnotes2:
+        
+        for midinote in arpnotes2:
+            
+            try:
+                time.sleep(arpspace2)
+                playingnotes[midinote] = []
+                playingnotes.setdefault(midinote, []).append(samples[midinote, arpvolume].play(midinote))
+                time.sleep(arptime2)
+                if midinote in playingnotes:
+                    for n in playingnotes[midinote]:
+                        if sustain:
+                            sustainplayingnotes.append(n)
+                        else:
+                            n.fadeout(50)
+            except:
+                pass
+    
     for port in midi_in[0].ports:
         if port not in previous and 'Midi Through' not in port:
             midi_in.append(rtmidi.MidiIn())
@@ -481,4 +781,16 @@ while True:
             midi_in[-1].open_port(port)
             print 'Opened MIDI: ' + port
     previous = midi_in[0].ports
-    time.sleep(2)
+    
+
+        
+
+    
+    time.sleep(.01)
+    
+    
+    
+    
+
+
+    
